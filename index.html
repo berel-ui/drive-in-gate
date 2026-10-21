@@ -123,7 +123,7 @@ var CFG = {
     if (m) { CFG.key = m[1]; localStorage.setItem(P + 'key', JSON.stringify(m[1])); }
     else CFG.key = JSON.parse(localStorage.getItem(P + 'key') || '""');
   } catch(e){ if (m) CFG.key = m[1]; }
-  if (m && history.replaceState) history.replaceState(null, '', location.pathname); // keep the key out of screenshots
+  // The key stays in the address so "Add to Home Screen" keeps it (iPhone home-screen apps don't share Safari's storage).
 })();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(function(){});
 var $ = function(s){ return document.querySelector(s); };
@@ -147,7 +147,16 @@ $('#device').addEventListener('change', function(e){ device = e.target.value.tri
 CFG.eventName = LS.get('event', CFG.eventName);
 $('#title').textContent = CFG.eventName + ' · Gate';
 if (!CFG.key) {
-  document.querySelector('.wrap').innerHTML = '<div class="panel" style="margin-top:24px"><h1>Gate link needed</h1><p>Open the full gate link the office sent you (it ends with <b>#key=…</b>). After that, this phone remembers it.</p></div>';
+  document.querySelector('.wrap').innerHTML = '<div class="panel" style="margin-top:24px;display:grid;gap:10px"><h1>Gate code needed</h1>' +
+    '<p style="margin:0">Paste the gate link the office sent you, or type the gate code (the part after <b>#key=</b>). This phone will remember it.</p>' +
+    '<input id="keyin" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Gate link or code">' +
+    '<button type="button" class="primary" id="keysave">Open the gate</button><span class="note" id="keymsg"></span></div>';
+  $('#keysave').addEventListener('click', function(){
+    var raw = $('#keyin').value.trim(), m2 = raw.match(/key=([A-Za-z0-9]+)/), k = m2 ? m2[1] : (/^[A-Za-z0-9]{8,}$/.test(raw) ? raw : '');
+    if (!k) { $('#keymsg').textContent = 'That doesn’t look like a gate link or code.'; return; }
+    try { localStorage.setItem(P + 'key', JSON.stringify(k)); } catch(e){}
+    location.replace(location.pathname + '#key=' + k); location.reload();
+  });
   return;
 }
 function save(){ LS.set('queue', queue); LS.set('used', localUsed); LS.set('conflicts', conflicts); }
