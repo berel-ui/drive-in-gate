@@ -67,14 +67,6 @@ input{font:16px var(--f);color:var(--ink);background:#10141b;border:1px solid va
     <h1 id="title">Gate</h1>
     <span class="pill" id="status">Loading…</span>
   </header>
-  <div class="panel" style="display:grid;gap:8px">
-    <div class="row" style="justify-content:space-between">
-      <span class="note" id="listinfo">Loading the gate list…</span>
-      <button type="button" id="refresh" style="padding:8px 12px;font-size:14px">Get new sign-ups</button>
-    </div>
-    <label class="note" for="device">This phone’s name (shows who let each car in)</label>
-    <input id="device" placeholder="e.g. Gate 1 – Mendy" maxlength="40">
-  </div>
 
   <div class="cam" id="cam">
     <video id="video" playsinline muted></video>
@@ -92,6 +84,15 @@ input{font:16px var(--f);color:var(--ink);background:#10141b;border:1px solid va
     <label for="q" style="font-weight:700">No QR code? Search by name or car</label>
     <input id="q" type="search" placeholder="e.g. Cohen or Honda" autocomplete="off">
     <div class="list" id="results"></div>
+  </div>
+
+  <div class="panel" style="display:grid;gap:8px">
+    <div class="row" style="justify-content:space-between">
+      <span class="note" id="listinfo">Loading the gate list…</span>
+      <button type="button" id="refresh" style="padding:8px 12px;font-size:14px">Get new sign-ups</button>
+    </div>
+    <label class="note" for="device">This phone’s name (shows who let each car in)</label>
+    <input id="device" placeholder="e.g. Gate 1 – Mendy" maxlength="40">
   </div>
 
   <div id="conflicts" hidden></div>
