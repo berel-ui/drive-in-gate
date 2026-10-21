@@ -50,7 +50,8 @@ input{font:16px var(--f);color:var(--ink);background:#10141b;border:1px solid va
 .v-wait{background:#1d2533;color:#fff}
 .v-vip{background:#1565ff;color:#fff}
 .v-vip .big{font-size:clamp(90px,34vw,180px);letter-spacing:.04em}
-.v-vip .tag{font-size:22px;font-weight:800;background:rgba(255,255,255,.18);padding:8px 16px;border-radius:99px}
+.verdict .tag{font-size:22px;font-weight:800;background:rgba(255,255,255,.18);padding:8px 16px;border-radius:99px;letter-spacing:.04em}
+.v-ok .tag{background:#f2c14e;color:#1b1405}
 .verdict button{background:rgba(0,0,0,.25);border-color:rgba(255,255,255,.5);color:inherit;font-size:18px;padding:14px 18px}
 .list{display:grid;gap:6px}
 .item{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:10px;border-radius:10px;background:#10141b}
@@ -94,6 +95,7 @@ input{font:16px var(--f);color:var(--ink);background:#10141b;border:1px solid va
     </div>
     <label class="note" for="device">This phone’s name (shows who let each car in)</label>
     <input id="device" placeholder="e.g. Gate 1 – Mendy" maxlength="40">
+    <button type="button" id="voice" style="padding:8px 12px;font-size:14px;justify-self:start">Voice: on</button>
   </div>
 
   <div id="conflicts" hidden></div>
@@ -291,8 +293,9 @@ function admit(s, note){
   // Several cars under one name is normal; just mention it.
   var sameName = signups().filter(function(x){ return x.id !== s.id && !x.cancelled && norm(x.first) === norm(s.first) && norm(x.last) === norm(s.last); }).length;
   var details = [carLine(s), sameName ? (sameName + 1) + ' cars registered under this name' : '', s.comments ? 'Note: ' + s.comments : '', online() ? '' : 'No signal · saved on this phone'].filter(Boolean).join(' · ');
-  if (s.ticket === 'VIP Sponsor') verdict('vip', 'VIP', who, details, null, 'Send to VIP parking');
-  else verdict('ok', 'Admit', who, details);
+  if (s.ticket === 'VIP Sponsor') { verdict('vip', 'VIP', who, details, null, 'Send to VIP parking'); say('VIP ticket. Stay to the left to be directed to VIP parking.'); }
+  else if (s.ticket === 'Sponsor') { verdict('ok', 'Admit', who, details, null, 'EVENT SPONSOR'); say('Event sponsor. Thank you for your support!'); }
+  else { verdict('ok', 'Admit', who, details); say('Welcome!'); }
   addLog('ok', who, online() ? carLine(s) : 'saved, will sync');
   // Send right away; if the sheet says another phone already let them in, say so.
   flush().then(function(){
@@ -379,6 +382,24 @@ function tick(){
   }
   setTimeout(tick, 150);
 }
+/* ---------- voice ---------- */
+// The phone's built-in voice: no internet needed, and a new scan cuts off the previous message.
+var voiceOn = LS.get('voice', true), voiceReady = false;
+function say(text){
+  if (!voiceOn || !window.speechSynthesis) return;
+  try { speechSynthesis.cancel(); var u = new SpeechSynthesisUtterance(text); u.lang = 'en-US'; u.rate = 1.05; speechSynthesis.speak(u); } catch(e){}
+}
+// iPhones only allow speech after a tap, so the first tap anywhere unlocks it with a silent message.
+function unlockVoice(){
+  if (voiceReady || !window.speechSynthesis) return; voiceReady = true;
+  try { var u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); } catch(e){}
+}
+document.addEventListener('click', unlockVoice, true);
+function renderVoice(){ $('#voice').textContent = voiceOn ? 'Voice: on' : 'Voice: off'; }
+$('#voice').addEventListener('click', function(){ voiceOn = !voiceOn; LS.set('voice', voiceOn); renderVoice(); if (voiceOn) say('Voice on.'); else try { speechSynthesis.cancel(); } catch(e){} });
+renderVoice();
+if (!window.speechSynthesis) $('#voice').hidden = true;
+
 $('#camstart').addEventListener('click', function(){
   if (stream) { stream.getTracks().forEach(function(t){ t.stop(); }); stream = null; torchOn = false; $('#torch').hidden = true; $('#camstart').textContent = 'Start camera'; $('#frame').hidden = true; $('#camtext').hidden = false; return; }
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { $('#camtext').textContent = 'Live camera isn’t available here. Use “Take a photo instead”.'; return; }
