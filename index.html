@@ -47,6 +47,7 @@ input{font:16px var(--f);color:var(--ink);background:#10141b;border:1px solid va
 .verdict .acts{display:flex;gap:10px;margin-top:10px;flex-wrap:wrap;justify-content:center}
 .v-ok{background:var(--ok);color:#fff}
 .v-bad{background:var(--bad);color:#fff}
+.v-wait{background:#1d2533;color:#fff}
 .v-vip{background:#1565ff;color:#fff}
 .v-vip .big{font-size:clamp(90px,34vw,180px);letter-spacing:.04em}
 .v-vip .tag{font-size:22px;font-weight:800;background:rgba(255,255,255,.18);padding:8px 16px;border-radius:99px}
@@ -250,7 +251,7 @@ function match(d){
   var byName = signups().filter(function(s){ return norm(s.first) === norm(d.first) && same(d.last, s.last) && norm(d.last); });
   var full = byName.filter(function(s){ return !diffs(s).length; });
   if (full.length) return {status: 'match', s: full.filter(function(s){ return !usedInfo(s.id) && !s.cancelled; })[0] || full[0]};
-  if (byName.length) return {status: 'mismatch', s: byName[0], diffs: diffs(byName[0])};
+  if (byName.length) { var best = byName.slice().sort(function(a, b){ return diffs(a).length - diffs(b).length; })[0]; return {status: 'mismatch', s: best, diffs: diffs(best)}; }
   var byCar = norm(d.car) ? signups().filter(function(s){ return !diffs(s).length; })[0] : null;
   if (byCar) return {status: 'mismatch', s: byCar, diffs: ['name']};
   return {status: 'none'};
@@ -294,7 +295,9 @@ function admit(s, note){
   if (u) { verdict('bad', 'Already in', who, carLine(s) + ' · let in at ' + fmtTime(u.at) + ' by ' + (u.device || 'another phone')); addLog('warn', who, 'first at ' + fmtTime(u.at)); return; }
   var at = Date.now();
   localUsed[s.id] = at; queue.push({id: s.id, at: at, device: deviceName(), note: note || ''}); save();
-  var details = [carLine(s), s.comments ? 'Note: ' + s.comments : '', online() ? '' : 'No signal · saved on this phone'].filter(Boolean).join(' · ');
+  // Several cars under one name is normal; just mention it.
+  var sameName = signups().filter(function(x){ return x.id !== s.id && !x.cancelled && norm(x.first) === norm(s.first) && norm(x.last) === norm(s.last); }).length;
+  var details = [carLine(s), sameName ? (sameName + 1) + ' cars registered under this name' : '', s.comments ? 'Note: ' + s.comments : '', online() ? '' : 'No signal · saved on this phone'].filter(Boolean).join(' · ');
   if (s.ticket === 'VIP Sponsor') verdict('vip', 'VIP', who, details, null, 'Send to VIP parking');
   else verdict('ok', 'Admit', who, details);
   addLog('ok', who, online() ? carLine(s) : 'saved, will sync');
@@ -305,12 +308,25 @@ function admit(s, note){
   });
   render();
 }
-function handleScan(raw){
+function showChecking(){
+  var v = $('#verdict'); clearTimeout(vTimer);
+  v.className = 'verdict v-wait';
+  v.innerHTML = '<div class="big">Checking…</div><div class="sub">Looking for new sign-ups</div>';
+  v.hidden = false; paused = true; v.onclick = null;
+}
+function handleScan(raw, retried){
   var d = parseScan(raw);
   if (!d) { verdict('bad', 'Not a gate pass', '', 'This QR code isn’t from the Drive-In confirmation email.'); addLog('bad', String(raw).slice(0, 20), 'not a gate pass'); return; }
   var who = (d.first + ' ' + d.last).trim();
+  var m = signups().length ? match(d) : {status: 'none'};
+  // Not a clean match on this phone's copy of the list: with signal, get the newest sign-ups and look again
+  // before showing red, since the car may have registered after this phone last updated.
+  if (m.status !== 'match' && online() && !retried) {
+    showChecking();
+    refresh(true).then(function(){ hideVerdict(); handleScan(raw, true); });
+    return;
+  }
   if (!signups().length) { verdict('bad', 'No gate list', who, 'This phone hasn’t loaded the list yet. Get signal and tap Get new sign-ups.'); return; }
-  var m = match(d);
   if (m.status === 'none') {
     verdict('bad', 'Not on the list', who, [d.year, d.color, d.car].filter(Boolean).join(' ') + ' · no paid sign-up has these details.' + (online() ? '' : ' (No signal: list from ' + fmtTime(list.at) + ')'));
     addLog('bad', who, 'not on list'); return;
