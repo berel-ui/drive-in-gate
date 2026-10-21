@@ -83,6 +83,7 @@ input{font:16px var(--f);color:var(--ink);background:#10141b;border:1px solid va
   </div>
   <div class="row">
     <button type="button" class="primary" id="camstart" style="flex:1">Start camera</button>
+    <button type="button" id="torch" style="flex:1" hidden>Flashlight on</button>
     <label class="btn" for="photo" style="flex:1;text-align:center">Take a photo instead</label>
     <input type="file" id="photo" accept="image/*" capture="environment" hidden>
   </div>
@@ -222,11 +223,14 @@ function parseScan(raw){
   return {first: p[1] || '', last: p[2] || '', car: p[3] || '', color: p[4] || '', year: p[5] || '', people: p[6] || ''};
 }
 var KEYS = ['car', 'color', 'year', 'people'], LABEL = {car: 'Car', color: 'Color', year: 'Year', people: 'People'};
+// A blank or cut-short part of the QR code doesn't count as a difference: an "&" or "#"
+// typed into the form can cut the rest of the code off. Only real disagreements do.
+function same(qr, sheet){ var a = norm(qr), b = norm(sheet); return !a || a === b || b.indexOf(a) === 0; }
 function match(d){
-  var diffs = function(s){ return KEYS.filter(function(k){ return norm(d[k]) !== norm(s[k]); }); };
-  var byName = signups().filter(function(s){ return norm(s.first) === norm(d.first) && norm(s.last) === norm(d.last); });
+  var diffs = function(s){ return KEYS.filter(function(k){ return !same(d[k], s[k]); }); };
+  var byName = signups().filter(function(s){ return norm(s.first) === norm(d.first) && same(d.last, s.last) && norm(d.last); });
   var full = byName.filter(function(s){ return !diffs(s).length; });
-  if (full.length) return {status: 'match', s: full.filter(function(s){ return !usedInfo(s.id); })[0] || full[0]};
+  if (full.length) return {status: 'match', s: full.filter(function(s){ return !usedInfo(s.id) && !s.cancelled; })[0] || full[0]};
   if (byName.length) return {status: 'mismatch', s: byName[0], diffs: diffs(byName[0])};
   var byCar = norm(d.car) ? signups().filter(function(s){ return !diffs(s).length; })[0] : null;
   if (byCar) return {status: 'mismatch', s: byCar, diffs: ['name']};
@@ -267,6 +271,7 @@ function addLog(kind, who, text){
 /* ---------- letting a car in ---------- */
 function admit(s, note){
   var u = usedInfo(s.id), who = (s.first + ' ' + s.last).trim();
+  if (s.cancelled) { verdict('bad', 'Cancelled', who, carLine(s) + ' · this registration was cancelled. Send them to the office tent.'); addLog('bad', who, 'cancelled'); return; }
   if (u) { verdict('bad', 'Already in', who, carLine(s) + ' · let in at ' + fmtTime(u.at) + ' by ' + (u.device || 'another phone')); addLog('warn', who, 'first at ' + fmtTime(u.at)); return; }
   var at = Date.now();
   localUsed[s.id] = at; queue.push({id: s.id, at: at, device: deviceName(), note: note || ''}); save();
@@ -311,7 +316,7 @@ function renderResults(){
   el.innerHTML = hits.length ? hits.map(function(s){
     var u = usedInfo(s.id);
     return '<div class="item"><div class="t"><div class="n">' + esc(s.first + ' ' + s.last) + '</div><div class="d">' + esc(carLine(s)) + '</div></div>' +
-      (u ? '<span class="pill warn">In ' + fmtTime(u.at) + '</span>' : '<button type="button" class="primary" data-id="' + esc(s.id) + '">Check in</button>') + '</div>';
+      (s.cancelled ? '<span class="pill bad">Cancelled</span>' : u ? '<span class="pill warn">In ' + fmtTime(u.at) + '</span>' : '<button type="button" class="primary" data-id="' + esc(s.id) + '">Check in</button>') + '</div>';
   }).join('') : '<span class="note">No sign-up matches that.</span>';
 }
 $('#results').addEventListener('click', function(e){
@@ -347,16 +352,26 @@ function tick(){
   setTimeout(tick, 150);
 }
 $('#camstart').addEventListener('click', function(){
-  if (stream) { stream.getTracks().forEach(function(t){ t.stop(); }); stream = null; $('#camstart').textContent = 'Start camera'; $('#frame').hidden = true; $('#camtext').hidden = false; return; }
+  if (stream) { stream.getTracks().forEach(function(t){ t.stop(); }); stream = null; torchOn = false; $('#torch').hidden = true; $('#camstart').textContent = 'Start camera'; $('#frame').hidden = true; $('#camtext').hidden = false; return; }
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { $('#camtext').textContent = 'Live camera isn’t available here. Use “Take a photo instead”.'; return; }
   navigator.mediaDevices.getUserMedia({video: {facingMode: 'environment', width: {ideal: 1280}}, audio: false}).then(function(s){
     stream = s; video.srcObject = s; return video.play();
   }).then(function(){
     $('#camtext').hidden = true; $('#frame').hidden = false; $('#camstart').textContent = 'Stop camera'; tick();
+    // The flashlight button only appears on phones whose camera allows it (most Android phones).
+    try { var tr = stream.getVideoTracks()[0], caps = tr.getCapabilities ? tr.getCapabilities() : {}; $('#torch').hidden = !caps.torch; } catch(e){}
     try { navigator.wakeLock && navigator.wakeLock.request('screen'); } catch(e){}
   }).catch(function(e){
     $('#camtext').textContent = 'The camera didn’t start (' + (e && e.name || 'blocked') + '). Allow camera access, or use “Take a photo instead”.';
   });
+});
+var torchOn = false;
+$('#torch').addEventListener('click', function(){
+  if (!stream) return;
+  var tr = stream.getVideoTracks()[0];
+  tr.applyConstraints({advanced: [{torch: !torchOn}]}).then(function(){
+    torchOn = !torchOn; $('#torch').textContent = torchOn ? 'Flashlight off' : 'Flashlight on';
+  }).catch(function(){ $('#torch').hidden = true; });
 });
 $('#photo').addEventListener('change', function(e){
   var f = e.target.files && e.target.files[0]; e.target.value = ''; if (!f) return;
