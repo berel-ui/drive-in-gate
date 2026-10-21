@@ -76,8 +76,8 @@ input{font:16px var(--f);color:var(--ink);background:#10141b;border:1px solid va
   <div class="row">
     <button type="button" class="primary" id="camstart" style="flex:1">Start camera</button>
     <button type="button" id="torch" style="flex:1" hidden>Flashlight on</button>
-    <button type="button" id="photobtn" style="flex:1">Take a photo instead</button>
-    <input type="file" id="photo" accept="image/*" capture="environment" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0">
+    <label class="btn" for="photo" style="flex:1;text-align:center">Take a photo instead</label>
+    <input type="file" id="photo" accept="image/*" capture="environment" hidden>
   </div>
 
   <div class="panel" style="display:grid;gap:8px">
@@ -124,6 +124,15 @@ var CFG = {
     else CFG.key = JSON.parse(localStorage.getItem(P + 'key') || '""');
   } catch(e){ if (m) CFG.key = m[1]; }
   // The key stays in the address so "Add to Home Screen" keeps it (iPhone home-screen apps don't share Safari's storage).
+  // The app manifest also gets the key in its start address, so the home-screen icon opens straight to the gate.
+  if (CFG.key) try {
+    var base = location.origin + location.pathname.replace(/[^/]*$/, '');
+    var man = {name: 'Chanukah Drive-In Gate', short_name: 'Gate', start_url: base + '#key=' + CFG.key, scope: base, display: 'standalone',
+      background_color: '#0f1218', theme_color: '#0f1218',
+      icons: [{src: base + 'icon-192.png', sizes: '192x192', type: 'image/png'}, {src: base + 'icon-512.png', sizes: '512x512', type: 'image/png'}]};
+    document.querySelector('link[rel=manifest]').href = 'data:application/manifest+json,' + encodeURIComponent(JSON.stringify(man));
+    if (!location.hash && history.replaceState) history.replaceState(null, '', location.pathname + '#key=' + CFG.key);
+  } catch(e){}
 })();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(function(){});
 var $ = function(s){ return document.querySelector(s); };
@@ -383,41 +392,15 @@ $('#torch').addEventListener('click', function(){
     torchOn = !torchOn; $('#torch').textContent = torchOn ? 'Flashlight off' : 'Flashlight on';
   }).catch(function(){ $('#torch').hidden = true; });
 });
-$('#photobtn').addEventListener('click', function(){ $('#photo').click(); });
-// Load through an <img> first: iPhones save HEIC photos, which the phone can show but createImageBitmap often can't read.
-function loadImage(f){
-  return new Promise(function(res, rej){
-    var url = URL.createObjectURL(f), img = new Image();
-    img.onload = function(){ res(img); setTimeout(function(){ URL.revokeObjectURL(url); }, 2000); };
-    img.onerror = function(){ URL.revokeObjectURL(url); (window.createImageBitmap ? createImageBitmap(f) : Promise.reject(new Error('no decoder'))).then(res, rej); };
-    img.src = url;
-  });
-}
-// The phone's own QR reader first (Android), then jsQR at a few sizes: a QR code that's small in the photo needs more pixels.
-function readQR(img){
-  var w0 = img.naturalWidth || img.width, h0 = img.naturalHeight || img.height;
-  var first = detector ? detector.detect(img).then(function(c){ return c && c[0] ? c[0].rawValue : null; }).catch(function(){ return null; }) : Promise.resolve(null);
-  return first.then(function(v){
-    if (v || !window.jsQR) return v;
-    var sizes = [1400, 1000, 700, 2400];
-    for (var i = 0; i < sizes.length; i++) {
-      var s = Math.min(1, sizes[i] / Math.max(w0, h0));
-      canvas.width = Math.round(w0 * s); canvas.height = Math.round(h0 * s);
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      var r = jsQR(ctx.getImageData(0, 0, canvas.width, canvas.height).data, canvas.width, canvas.height, {inversionAttempts: 'attemptBoth'});
-      if (r) return r.data;
-    }
-    return null;
-  });
-}
 $('#photo').addEventListener('change', function(e){
   var f = e.target.files && e.target.files[0]; e.target.value = ''; if (!f) return;
-  var b = $('#photobtn'); b.disabled = true; b.textContent = 'Reading photo…';
-  loadImage(f).then(readQR).then(function(v){
-    if (v) { lastValue = ''; paused = false; onValue(v); }
-    else verdict('bad', 'No QR found', '', 'Try again a little closer, with the whole QR code in the photo and not blurry.');
-  }).catch(function(){ verdict('bad', 'Couldn’t read photo', '', 'Try taking it again.'); })
-  .then(function(){ b.disabled = false; b.textContent = 'Take a photo instead'; });
+  createImageBitmap(f).then(function(img){
+    var scale = Math.min(1, 1400 / Math.max(img.width, img.height));
+    canvas.width = Math.round(img.width * scale); canvas.height = Math.round(img.height * scale);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    var r = jsQR(ctx.getImageData(0, 0, canvas.width, canvas.height).data, canvas.width, canvas.height, {inversionAttempts: 'attemptBoth'});
+    if (r) { lastValue = ''; onValue(r.data); } else verdict('bad', 'No QR found', '', 'Try again closer, with the code filling more of the photo.');
+  }).catch(function(){ verdict('bad', 'Couldn’t read photo', '', 'Try taking it again.'); });
 });
 
 /* ---------- status ---------- */
