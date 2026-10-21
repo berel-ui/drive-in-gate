@@ -1,7 +1,7 @@
 // Keeps the gate page on the phone so it opens with no signal.
 // Page files: try the network briefly (so updates arrive), otherwise use the saved copy.
 // Calls to the Google script are never cached; the page handles those itself.
-const CACHE = 'gate-v1';
+const CACHE = 'gate-v2';
 const FILES = ['./', './index.html', './manifest.webmanifest', './icon.svg', './icon-180.png', './icon-192.png', './icon-512.png'];
 const JSQR = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js';
 
@@ -31,7 +31,8 @@ self.addEventListener('fetch', e => {
   if (!mine) return;
   e.respondWith((async () => {
     try {
-      const res = await Promise.race([fetch(req), timeout(4000)]);
+      // no-cache: always ask GitHub whether the page changed, so phones get updates right away.
+      const res = await Promise.race([fetch(req.url, {cache: 'no-cache'}), timeout(4000)]);
       if (res.ok) { const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)); }
       return res;
     } catch (err) {
